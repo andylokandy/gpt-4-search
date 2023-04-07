@@ -26,7 +26,7 @@ The script will first provide a list of plugins that GPT-4 can use. Then the lis
 
 The log file of the demo pretty much shows the magic behind the scene:
 
-````log
+````markdown
 2023-04-08 00:20:12,662 INFO:user-input: compare the pros and cons for golang and rust
 2023-04-08 00:20:12,684 INFO:gpt-context: [HumanMessage(content="You are an helpful and kind assistant to answer questions that can use tools to interact with real world and get access to the latest information. You can call one of the following functions:\n- SEARCH(query: string) searches the web, and returns the top snippets, it'll be better if the query string is in english\n- SUMMARIZE(snippet_ids: uint[]) click into the search result, useful when you want to investigate the detail of the search result\n- PYTHON(code: string) evaluates the code in a python interpreter, wrap code in triple quotes\nIn each response, you must start with a function call. Don't explain why you use a tool. If you cannot figure out the answer, you say ’I don’t know’. When you are generating answers according to the search result, link your answers to the snippet id and use the same language as the questioner\nQ:compare the pros and cons for golang and rust", additional_kwargs={})]
 2023-04-08 00:20:16,021 INFO:gpt-response: SEARCH("compare the pros and cons of golang and rust")
