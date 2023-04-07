@@ -1,6 +1,6 @@
 # GPT-4 with Search
 
-A simple command-line GPT-4 repl that can use Google to search for the lastest information. Its purpose is to demonstrate how a plugin system can be integrated into an LLM like GPT-4.
+This is a command-line GPT-4 REPL that utilizes Google to search for the latest information. Its main objective is to showcase how a plugin system can be integrated into an LLM such as GPT-4.
 
 ## Usage
 
@@ -10,21 +10,22 @@ A simple command-line GPT-4 repl that can use Google to search for the lastest i
 
 1. Get a OpenAI API key from [here](https://platform.openai.com/account/api-keys), make sure you have access to GPT-4 API endpoint.
 2. Get a Google Serach API key according to the [Instruction](https://stackoverflow.com/questions/37083058/programmatically-searching-google-in-python-using-custom-search).
-3. Copy `.env.template` to `.env` and then fill in the API keys.
-4. Install the dependencies.
+3. Clone the repo.
+4. Copy `.env.template` to `.env` and then fill in the API keys.
+5. Install the dependencies.
 ```
 poetry install
 ```
-5. Run the script.
+6. Run the script.
 ```
 poetry run python gpt-4-search.py
 ```
 
 ## How it works
 
-The script will first provide a list of plugins that GPT-4 can use. Then the list will be combined with the user prompt to send to GPT-4. The result will be parsed to look for the plugin call. If the plugin call is found, the plugin will be executed and the result will be added to the message context, and then send to GPT-4 again. The process will repeat until the GPT-4 return response with no plugin call.
+The first step of the script is to present a list of plugins available for GPT-4. This list will then be merged with the user prompt and sent to GPT-4. The output will be analyzed to identify any plugin calls. If a plugin call is detected, it will be executed and its result added to the message context before being sent back to GPT-4 for further processing. This cycle continues until GPT-4 returns a response without any plugin calls.
 
-The log file of the demo pretty much shows the magic behind the scene:
+The log file from the demo reveals the mechanics behind the scenes:
 
 ````markdown
 2023-04-08 00:20:12,662 INFO:user-input: compare the pros and cons for golang and rust
