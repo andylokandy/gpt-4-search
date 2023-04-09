@@ -148,9 +148,9 @@ tools = [
 messages = []
 
 
-def add_message(message):
+def add_message(message, is_intermediate: bool = False):
     global messages
-    messages.append(message)
+    messages.append((is_intermediate, message))
 
 
 def clear_messages():
@@ -158,21 +158,31 @@ def clear_messages():
     messages = []
 
 
+def remove_intermediate_messsages():
+    global messages
+    messages = list(filter(lambda msg: not msg[0], messages))
+
+
+def messages_tokens() -> int:
+    return sum(map(lambda msg: count_tokens(msg[1].content), messages))
+
+
 def call_llm(streaming: bool = False) -> str:
-    with get_openai_callback() as cb:
-        if streaming:
-            chat = ChatOpenAI(model_name="gpt-4", streaming=True, callback_manager=CallbackManager(
-                [StreamingStdOutCallbackHandler(), cb]), verbose=True, temperature=0)
-        else:
-            chat = ChatOpenAI(model_name="gpt-4", callback_manager=CallbackManager(
-                [cb]), verbose=True, temperature=0)
-        logging.info(f"gpt-context: {messages}")
-        resp = chat.generate([messages]).generations[0][0].text
-        logging.info(f"gpt-response: {resp}")
-        logging.info(
-            f"cost: ${cb.total_cost}, total_tokens: {cb.total_tokens}")
-        print('')
-        return resp
+    if streaming:
+        chat = ChatOpenAI(model_name="gpt-4", streaming=True, callback_manager=CallbackManager(
+            [StreamingStdOutCallbackHandler()]), verbose=True, temperature=0)
+    else:
+        chat = ChatOpenAI(model_name="gpt-4", verbose=True, temperature=0)
+    logging.info(f"gpt-context: {messages}")
+    resp = chat.generate([(map(lambda msg: msg[1], messages))]).generations[0][0].text
+    logging.info(f"gpt-response: {resp}")
+    prompt_tokens = messages_tokens()
+    complete_tokens = count_tokens(resp)
+    total_cost = (0.03 * prompt_tokens + 0.06 * complete_tokens) / 1000
+    logging.info(
+        f"cost: ${total_cost}, prompt_tokens: {prompt_tokens}, complete_tokens: {complete_tokens}")
+    print('')
+    return resp
     
 
 # Prompts
@@ -196,7 +206,7 @@ def instruction_prompt(query: str, tools: list[dict], context: Optional[str] = N
 
 
 def summarize_messages() -> str:
-    add_message(HumanMessage(content="Summarize the whole context for another assistant to continue the process. You should describe the previous context, the user's question, the action you've made, the summarization of the tool result, and eventually your answer"))
+    add_message(HumanMessage(content="Summarize the conversations above for another assistant to continue the process"), is_intermediate=True)
     return call_llm(streaming=False)
 
 
@@ -207,15 +217,18 @@ def run(query: str) -> str:
     if len(messages) == 0:
         add_message(HumanMessage(content=instruction_prompt(query, tools)))
     else:
-        context = summarize_messages()
-        logging.info(f"summarization: {context}")
-        clear_messages()
-        add_message(HumanMessage(
-            content=instruction_prompt(query, tools, context)))
+        remove_intermediate_messsages()
+        if messages_tokens() < 1100:
+            add_message(HumanMessage(content=f"Q:{query}"))
+        else:
+            context = summarize_messages()
+            logging.info(f"summarization: {context}")
+            clear_messages()
+            add_message(HumanMessage(
+                content=instruction_prompt(query, tools, context)))
 
     while True:
         resp = call_llm(streaming=True)
-        add_message(AIMessage(content=resp))
         pattern = r'(\w+)\(([\s\S]*)\)'
         match = re.search(pattern, resp)
         if match:
@@ -226,12 +239,15 @@ def run(query: str) -> str:
                     result = tool["run"](func_args)
                     result = f"```result\n{result}\n```"
                     logging.info(f"tool-result: {result}")
-                    add_message(AIMessage(content=result))
+                    add_message(AIMessage(content=resp), is_intermediate=True)
+                    add_message(AIMessage(content=result), is_intermediate=True)
                     break
             else:
+                add_message(AIMessage(content=resp))
                 logging.info("no function call, so it is the answer")
                 return resp
         else:
+            add_message(AIMessage(content=resp))
             logging.info("no function call, so it is the answer")
             return resp
 
