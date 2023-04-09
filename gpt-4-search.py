@@ -128,8 +128,8 @@ def python(code: str) -> str:
             return run_with_timeout(['python', tmp.name], timeout_sec=5)
     except Exception as e:
         logging.error(e)
-        print("Execution timed out")
-        return str(e) + "\ntry again and optimze the code"
+        print(e)
+        return str(e) + "\ntry again and optimize the code"
 
 
 tools = [
