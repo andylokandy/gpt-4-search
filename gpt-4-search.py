@@ -1,3 +1,5 @@
+import subprocess
+import tempfile
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chat_models.openai import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
@@ -21,8 +23,12 @@ import ssl
 import readline
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.poolmanager import PoolManager
+from typing import Optional
 
 load_dotenv()
+
+
+# Utils
 
 
 def count_tokens(text: str) -> int:
@@ -63,6 +69,25 @@ def top_k_similar_docs(query: str, docs: list[str], k: int = 5) -> list[str]:
     return [docs[i] for i in top_k]
 
 
+def run_with_timeout(cmd, timeout_sec):
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+        try:
+            outs, errs = proc.communicate(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            outs, errs = proc.communicate()
+            raise TimeoutError(
+                f"Process took too long (>{timeout_sec} seconds)")
+
+    if errs:
+        return errs.decode('utf-8')
+    else:
+        return outs.decode('utf-8')
+
+
+# Tools
+
+
 links = []
 
 
@@ -97,9 +122,14 @@ def python(code: str) -> str:
     pattern = r'(?<=("""))(.|\n)*?(?=\1)'
     match = re.search(pattern, code).group(0)
     try:
-        return str(eval(code))
+        with tempfile.NamedTemporaryFile() as tmp:
+            tmp.write(match.encode())
+            tmp.flush()
+            return run_with_timeout(['python', tmp.name], timeout_sec=5)
     except Exception as e:
-        return str(e)
+        logging.error(e)
+        print("Execution timed out")
+        return str(e) + "\ntry again and optimze the code"
 
 
 tools = [
@@ -108,19 +138,11 @@ tools = [
     {"name": "SUMMARIZE", "args": "(snippet_ids: uint[])",
      "description": "click into the search result, useful when you want to investigate the detail of the search result", "run": summarize},
     {"name": "PYTHON", "args": "(code: string)",
-     "description": "evaluates the code in a python interpreter, wrap code in triple quotes", "run": python},
+     "description": "evaluates the code in a python interpreter, wrap code in triple quotes, wrap the answer in `print()`", "run": python},
 ]
 
 
-def instruction_prompt(query: str, tools: list[dict]) -> str:
-    prompt = "You are an helpful and kind assistant to answer questions that can use tools to interact with real world and get access to the latest information. You can call one of the following functions:\n"
-
-    for tool in tools:
-        prompt += f'- {tool["name"]}{tool["args"]} {tool["description"]}\n'
-
-    prompt += "In each response, you must start with a function call. Don't explain why you use a tool. If you cannot figure out the answer, you say ’I don’t know’. When you are generating answers according to the search result, link your answers to the snippet id and use the same language as the questioner\n"
-    prompt += f"Q:{query}"
-    return prompt
+# LLM
 
 
 messages = []
@@ -131,10 +153,19 @@ def add_message(message):
     messages.append(message)
 
 
-def call_llm() -> str:
+def clear_messages():
+    global messages
+    messages = []
+
+
+def call_llm(streaming: bool = False) -> str:
     with get_openai_callback() as cb:
-        chat = ChatOpenAI(model_name="gpt-4", streaming=True, callback_manager=CallbackManager(
-            [StreamingStdOutCallbackHandler(), cb]), verbose=True, temperature=0)
+        if streaming:
+            chat = ChatOpenAI(model_name="gpt-4", streaming=True, callback_manager=CallbackManager(
+                [StreamingStdOutCallbackHandler(), cb]), verbose=True, temperature=0)
+        else:
+            chat = ChatOpenAI(model_name="gpt-4", callback_manager=CallbackManager(
+                [cb]), verbose=True, temperature=0)
         logging.info(f"gpt-context: {messages}")
         resp = chat.generate([messages]).generations[0][0].text
         logging.info(f"gpt-response: {resp}")
@@ -142,16 +173,48 @@ def call_llm() -> str:
             f"cost: ${cb.total_cost}, total_tokens: {cb.total_tokens}")
         print('')
         return resp
+    
+
+# Prompts
+    
+
+def instruction_prompt(query: str, tools: list[dict], context: Optional[str] = None) -> str:
+    prompt = "You are an helpful and kind assistant to answer questions that can use tools to interact with real world and get access to the latest information. You can call one of the following functions:\n"
+
+    for tool in tools:
+        prompt += f'- {tool["name"]}{tool["args"]} {tool["description"]}\n'
+
+    prompt += "In each response, you must start with a function call like `SEARCH(\"something\")` or `PYTHON(\"\"\"1+1\"\"\")`. Don't explain why you use a tool. If you cannot figure out the answer, you say ’I don’t know’. When you are generating answers according to the search result, link your answers to the snippet id like `[1]`, and use the same language as the questioner\n"
+
+    if context:
+        prompt += "Context from the previous assistant:\n```\n"
+        prompt += context
+        prompt += "\n```\n"
+
+    prompt += f"Q:{query}"
+    return prompt
+
+
+def summarize_messages() -> str:
+    add_message(HumanMessage(content="Summarize the whole context for another assistant to continue the process. You should describe the previous context, the user's question, the action you've made, the summarization of the tool result, and eventually your answer"))
+    return call_llm(streaming=False)
+
+
+# The REPL loop
 
 
 def run(query: str) -> str:
     if len(messages) == 0:
         add_message(HumanMessage(content=instruction_prompt(query, tools)))
     else:
-        add_message(HumanMessage(content=f"Q:{query}"))
+        context = summarize_messages()
+        logging.info(f"summarization: {context}")
+        clear_messages()
+        add_message(HumanMessage(
+            content=instruction_prompt(query, tools, context)))
 
     while True:
-        resp = call_llm()
+        resp = call_llm(streaming=True)
         add_message(AIMessage(content=resp))
         pattern = r'(\w+)\(([\s\S]*)\)'
         match = re.search(pattern, resp)
@@ -171,7 +234,7 @@ def run(query: str) -> str:
         else:
             logging.info("no function call, so it is the answer")
             return resp
-        
+
 
 def find_references(answer: str) -> list[int]:
     pattern = r'\[(\d+)\]'
