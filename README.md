@@ -4,9 +4,9 @@ This is a command-line GPT-4 REPL that utilizes Google to search for the latest 
 
 ## Usage
 
+<video src='https://user-images.githubusercontent.com/9637710/230850187-dcc847c3-5c56-4e36-9f42-b48474915c66.mp4'></video>
 <video src='https://user-images.githubusercontent.com/9637710/230764961-ea90e864-e01d-4d41-96e3-1cacf44e5e14.mp4'></video>
 <video src='https://user-images.githubusercontent.com/9637710/230764959-dccc567e-0639-4b71-92c9-9fa35d4eb8ee.mp4'></video>
-<video src='https://user-images.githubusercontent.com/9637710/230649588-58f16c49-83da-4aff-af94-565c81bd038b.mp4'></video>
 
 ## Install
 
