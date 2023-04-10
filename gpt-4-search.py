@@ -21,8 +21,6 @@ import re
 import logging
 import ssl
 import readline
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.poolmanager import PoolManager
 from typing import Optional
 
 load_dotenv()
@@ -91,14 +89,14 @@ def run_with_timeout(cmd, timeout_sec):
 links = []
 
 
-def search(query: str) -> str:
-    query = query.replace('"', '')
-    results = GoogleSearchAPIWrapper().results(query, 5)
+def search(queries: str) -> str:
     summary = ''
-    for result in results:
-        i = len(links)
-        summary += f'[{i}] {result["title"]}\n{result.get("snippet", "")}\n'
-        links.append({"link": result["link"], "query": query})
+    for query in json.loads(queries):
+        results = GoogleSearchAPIWrapper().results(query, 5)
+        for result in results:
+            i = len(links)
+            summary += f'[{i}] {result["title"]}\n{result.get("snippet", "")}\n'
+            links.append({"link": result["link"], "query": query})
     logging.info(links)
     return summary
 
@@ -133,7 +131,7 @@ def python(code: str) -> str:
 
 
 tools = [
-    {"name": "SEARCH", "args": "(query: string)",
+    {"name": "SEARCH", "args": "(queries: string[])",
      "description": "searches the web, and returns the top snippets, it'll be better if the query string is in english", "run": search},
     {"name": "SUMMARIZE", "args": "(snippet_ids: uint[])",
      "description": "click into the search result, useful when you want to investigate the detail of the search result", "run": summarize},
@@ -148,9 +146,9 @@ tools = [
 messages = []
 
 
-def add_message(message, is_intermediate: bool = False):
+def add_message(message, is_tool_result: bool = False):
     global messages
-    messages.append((is_intermediate, message))
+    messages.append((is_tool_result, message))
 
 
 def clear_messages():
@@ -206,7 +204,7 @@ def instruction_prompt(query: str, tools: list[dict], context: Optional[str] = N
 
 
 def summarize_messages() -> str:
-    add_message(HumanMessage(content="Summarize the conversations above for another assistant to continue the process"), is_intermediate=True)
+    add_message(HumanMessage(content="Summarize the conversations above for another assistant to continue the process"), is_tool_result=True)
     return call_llm(streaming=False)
 
 
@@ -229,6 +227,7 @@ def run(query: str) -> str:
 
     while True:
         resp = call_llm(streaming=True)
+        add_message(AIMessage(content=resp))
         pattern = r'(\w+)\(([\s\S]*)\)'
         match = re.search(pattern, resp)
         if match:
@@ -239,15 +238,12 @@ def run(query: str) -> str:
                     result = tool["run"](func_args)
                     result = f"```result\n{result}\n```"
                     logging.info(f"tool-result: {result}")
-                    add_message(AIMessage(content=resp), is_intermediate=True)
-                    add_message(AIMessage(content=result), is_intermediate=True)
+                    add_message(AIMessage(content=result), is_tool_result=True)
                     break
             else:
-                add_message(AIMessage(content=resp))
                 logging.info("no function call, so it is the answer")
                 return resp
         else:
-            add_message(AIMessage(content=resp))
             logging.info("no function call, so it is the answer")
             return resp
 
