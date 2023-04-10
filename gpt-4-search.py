@@ -211,6 +211,27 @@ def summarize_messages() -> str:
 # The REPL loop
 
 
+references = []
+
+
+def add_reference(answer: str):
+    global references
+    pattern = r'\[(\d+)\]'
+    matched = re.findall(pattern, answer)
+    for id in matched:
+        if int(id) not in references:
+            references.append(int(id))
+
+
+def show_references():
+    global references
+    output = ""
+    for id in references:
+        output += f"[{id}]: {links[id]['link']}\n"
+    print(output)
+    references = []
+
+
 def run(query: str) -> str:
     if len(messages) == 0:
         add_message(HumanMessage(content=instruction_prompt(query, tools)))
@@ -228,6 +249,7 @@ def run(query: str) -> str:
     while True:
         resp = call_llm(streaming=True)
         add_message(AIMessage(content=resp))
+        add_reference(resp)
         pattern = r'(\w+)\(([\s\S]*)\)'
         match = re.search(pattern, resp)
         if match:
@@ -248,16 +270,6 @@ def run(query: str) -> str:
             return resp
 
 
-def find_references(answer: str) -> list[int]:
-    pattern = r'\[(\d+)\]'
-    matched = re.findall(pattern, answer)
-    ids = set(map(int, matched))
-    references = ""
-    for id in ids:
-        references += f"[{id}]: {links[id]['link']}\n"
-    return references
-
-
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
@@ -271,8 +283,7 @@ if __name__ == "__main__":
         user_input = input("> ")
         logging.info(f"user-input: {user_input}")
         try:
-            answer = run(user_input)
-            references = find_references(answer)
-            print(references)
+            run(user_input)
+            show_references()
         except Exception as e:
             print("Error:", e)
